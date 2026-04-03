@@ -54,3 +54,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Local installers / large binaries (do not commit)
+git-installer.exe
