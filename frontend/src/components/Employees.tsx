@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { Users, Plus, Edit, Trash2, Search } from 'lucide-react';
 
 interface Employee {
@@ -17,8 +18,10 @@ interface Employee {
 }
 
 const Employees: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -41,10 +44,12 @@ const Employees: React.FC = () => {
 
   const fetchEmployees = async () => {
     try {
-      const response = await axios.get('/api/employees');
+      setError(null);
+      const response = await api.get<Employee[]>('/api/employees');
       setEmployees(response.data);
-    } catch (error) {
-      console.error('Error fetching employees:', error);
+    } catch (err) {
+      setError('Could not load employees.');
+      console.error('Error fetching employees:', err);
     } finally {
       setLoading(false);
     }
@@ -52,16 +57,42 @@ const Employees: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) return;
     try {
+      setError(null);
+      const salaryVal = formData.salary === '' ? null : Number(formData.salary);
       if (editingEmployee) {
-        await axios.put(`/api/employees/${editingEmployee.id}`, formData);
+        await api.put(`/api/employees/${editingEmployee.id}`, {
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          email: formData.email,
+          phone: formData.phone,
+          department: formData.department,
+          position: formData.position,
+          salary: salaryVal,
+          status: formData.status,
+        });
       } else {
-        await axios.post('/api/employees', formData);
+        await api.post('/api/employees', {
+          employee_id: formData.employee_id,
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          email: formData.email,
+          phone: formData.phone,
+          department: formData.department,
+          position: formData.position,
+          salary: salaryVal,
+          hire_date: formData.hire_date || null,
+        });
       }
       fetchEmployees();
       resetForm();
-    } catch (error) {
-      console.error('Error saving employee:', error);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setError(msg || 'Could not save employee.');
     }
   };
 
@@ -83,12 +114,18 @@ const Employees: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
+    if (!isAdmin) return;
     if (window.confirm('Are you sure you want to delete this employee?')) {
       try {
-        await axios.delete(`/api/employees/${id}`);
+        setError(null);
+        await api.delete(`/api/employees/${id}`);
         fetchEmployees();
-      } catch (error) {
-        console.error('Error deleting employee:', error);
+      } catch (err: unknown) {
+        const msg =
+          err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+            : undefined;
+        setError(msg || 'Could not delete employee.');
       }
     }
   };
@@ -138,7 +175,7 @@ const Employees: React.FC = () => {
         </button>
       </div>
 
-      {showAddForm && (
+      {showAddForm && isAdmin && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">
             {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
@@ -212,6 +249,7 @@ const Employees: React.FC = () => {
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <select
+              aria-label="Employment status"
               value={formData.status}
               onChange={(e) => setFormData({...formData, status: e.target.value})}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -308,20 +346,26 @@ const Employees: React.FC = () => {
                       {employee.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleEdit(employee)}
-                      className="text-indigo-600 hover:text-indigo-900 mr-3"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(employee.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
+                  {isAdmin && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${employee.first_name} ${employee.last_name}`}
+                        onClick={() => handleEdit(employee)}
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${employee.first_name} ${employee.last_name}`}
+                        onClick={() => handleDelete(employee.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import { Clock, LogIn, LogOut, Calendar, Search } from 'lucide-react';
 
 interface AttendanceRecord {
@@ -33,7 +33,7 @@ const Attendance: React.FC = () => {
 
   const fetchAttendance = async () => {
     try {
-      const response = await axios.get('/api/attendance', {
+      const response = await api.get('/api/attendance', {
         params: { date: selectedDate }
       });
       setAttendance(response.data);
@@ -47,7 +47,7 @@ const Attendance: React.FC = () => {
   const handleCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post('/api/attendance/check-in', {
+      await api.post('/api/attendance/check-in', {
         employee_id: formData.employee_id,
         date: formData.date,
         check_in: formData.check_in
@@ -62,7 +62,7 @@ const Attendance: React.FC = () => {
   const handleCheckOut = async (record: AttendanceRecord) => {
     const checkOutTime = new Date().toTimeString().split(' ')[0].substring(0, 5);
     try {
-      await axios.post('/api/attendance/check-out', {
+      await api.post('/api/attendance/check-out', {
         employee_id: record.employee_id,
         date: record.date,
         check_out: checkOutTime

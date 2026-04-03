@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { Link } from 'react-router-dom';
+import api from '../api/client';
 import { Users, Calendar, Clock, FileText, TrendingUp } from 'lucide-react';
 
 interface DashboardStats {
@@ -24,7 +25,7 @@ const Dashboard: React.FC = () => {
 
   const fetchDashboardStats = async () => {
     try {
-      const response = await axios.get('/api/dashboard/stats');
+      const response = await api.get('/api/dashboard/stats');
       setStats(response.data);
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -112,24 +113,33 @@ const Dashboard: React.FC = () => {
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
           <div className="space-y-3">
-            <button className="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+            <Link
+              to="/employees"
+              className="block w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            >
               <div className="flex items-center">
                 <Users className="h-5 w-5 text-blue-600 mr-3" />
                 <span className="text-blue-900">Add New Employee</span>
               </div>
-            </button>
-            <button className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+            </Link>
+            <Link
+              to="/attendance"
+              className="block w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+            >
               <div className="flex items-center">
                 <Clock className="h-5 w-5 text-green-600 mr-3" />
                 <span className="text-green-900">Mark Attendance</span>
               </div>
-            </button>
-            <button className="w-full text-left px-4 py-3 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors">
+            </Link>
+            <Link
+              to="/leave-requests"
+              className="block w-full text-left px-4 py-3 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors"
+            >
               <div className="flex items-center">
                 <FileText className="h-5 w-5 text-yellow-600 mr-3" />
                 <span className="text-yellow-900">Review Leave Requests</span>
               </div>
-            </button>
+            </Link>
           </div>
         </div>
 

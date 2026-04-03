@@ -1,8 +1,18 @@
 import React from 'react';
-import { Outlet, Link } from 'react-router-dom';
-import { Users, Calendar, Home, Clock, FileText } from 'lucide-react';
+import { Outlet, NavLink } from 'react-router-dom';
+import { Users, Calendar, Home, Clock, FileText, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  `inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+    isActive
+      ? 'border-indigo-500 text-gray-900'
+      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+  }`;
 
 const Layout: React.FC = () => {
+  const { user, logout } = useAuth();
+
   return (
     <div className="min-h-screen bg-gray-100">
       <nav className="bg-white shadow-lg">
@@ -13,38 +23,40 @@ const Layout: React.FC = () => {
                 <h1 className="text-xl font-bold text-gray-800">HR Management</h1>
               </div>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                <Link
-                  to="/dashboard"
-                  className="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
+                <NavLink to="/dashboard" className={linkClass}>
                   <Home className="w-4 h-4 mr-1" />
                   Dashboard
-                </Link>
-                <Link
-                  to="/employees"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
+                </NavLink>
+                <NavLink to="/employees" className={linkClass}>
                   <Users className="w-4 h-4 mr-1" />
                   Employees
-                </Link>
-                <Link
-                  to="/attendance"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
+                </NavLink>
+                <NavLink to="/attendance" className={linkClass}>
                   <Clock className="w-4 h-4 mr-1" />
                   Attendance
-                </Link>
-                <Link
-                  to="/leave-requests"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
+                </NavLink>
+                <NavLink to="/leave-requests" className={linkClass}>
                   <FileText className="w-4 h-4 mr-1" />
                   Leave Requests
-                </Link>
+                </NavLink>
               </div>
             </div>
-            <div className="flex items-center">
-              <span className="text-gray-700">Welcome to HR System</span>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-600 hidden sm:inline">
+                <span className="text-gray-400">Signed in as </span>
+                <span className="font-medium text-gray-800">{user?.username}</span>
+                {user?.role === 'admin' && (
+                  <span className="ml-2 text-xs uppercase tracking-wide text-indigo-600">Admin</span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+              >
+                <LogOut className="w-4 h-4" />
+                Log out
+              </button>
             </div>
           </div>
         </div>

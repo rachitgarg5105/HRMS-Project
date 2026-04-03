@@ -7,6 +7,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // Middleware
 app.use(cors());
@@ -24,7 +25,6 @@ const db = new sqlite3.Database('./hr_management.db', (err) => {
 
 // Initialize database tables
 function initializeDatabase() {
-  // Employees table
   db.run(`CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id TEXT UNIQUE NOT NULL,
@@ -40,7 +40,6 @@ function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  // Attendance table
   db.run(`CREATE TABLE IF NOT EXISTS attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id TEXT NOT NULL,
@@ -52,7 +51,6 @@ function initializeDatabase() {
     FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
   )`);
 
-  // Leave requests table
   db.run(`CREATE TABLE IF NOT EXISTS leave_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id TEXT NOT NULL,
@@ -66,7 +64,6 @@ function initializeDatabase() {
     FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
   )`);
 
-  // Users table for authentication
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -77,7 +74,6 @@ function initializeDatabase() {
   )`);
 }
 
-// Middleware for JWT authentication
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -86,18 +82,37 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      return res.status(403).json({ error: 'Invalid token' });
+      return res.status(403).json({ error: 'Invalid or expired token' });
     }
     req.user = user;
     next();
   });
 }
 
-// Routes
+function requireAdmin(req, res, next) {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Administrator access required' });
+  }
+  next();
+}
 
-// Authentication
+function requireLeaveCreateAccess(req, res, next) {
+  if (req.user.role === 'admin') {
+    return next();
+  }
+  const { employee_id } = req.body;
+  if (req.user.role === 'employee' && req.user.employee_id && employee_id === req.user.employee_id) {
+    return next();
+  }
+  return res.status(403).json({
+    error: 'You can only submit leave requests for your own employee ID',
+  });
+}
+
+// --- Public routes ---
+
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -115,18 +130,38 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    );
+    const payload = {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      employee_id: user.employee_id || null,
+    };
 
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        employee_id: user.employee_id || null,
+      },
+    });
   });
 });
 
+// --- Protected API (requires Bearer token) ---
+
+const api = express.Router();
+api.use(authenticateToken);
+
+api.get('/auth/me', (req, res) => {
+  res.json({ user: req.user });
+});
+
 // Employee Management
-app.get('/api/employees', (req, res) => {
+api.get('/employees', (req, res) => {
   db.all('SELECT * FROM employees ORDER BY last_name, first_name', (err, employees) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -135,31 +170,40 @@ app.get('/api/employees', (req, res) => {
   });
 });
 
-app.post('/api/employees', (req, res) => {
-  const { employee_id, first_name, last_name, email, phone, department, position, salary, hire_date } = req.body;
+api.post('/employees', requireAdmin, (req, res) => {
+  const { employee_id, first_name, last_name, email, phone, department, position, salary, hire_date } =
+    req.body;
+
+  if (!employee_id || !first_name || !last_name || !email) {
+    return res.status(400).json({ error: 'employee_id, first_name, last_name, and email are required' });
+  }
+
+  const salaryNum = salary !== undefined && salary !== '' && salary !== null ? Number(salary) : null;
 
   db.run(
     `INSERT INTO employees (employee_id, first_name, last_name, email, phone, department, position, salary, hire_date)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [employee_id, first_name, last_name, email, phone, department, position, salary, hire_date],
-    function(err) {
+    [employee_id, first_name, last_name, email, phone || null, department || null, position || null, salaryNum, hire_date || null],
+    function (err) {
       if (err) {
-        return res.status(500).json({ error: 'Failed to create employee' });
+        return res.status(500).json({ error: err.message.includes('UNIQUE') ? 'Duplicate employee ID or email' : 'Failed to create employee' });
       }
       res.json({ id: this.lastID, message: 'Employee created successfully' });
     }
   );
 });
 
-app.put('/api/employees/:id', (req, res) => {
+api.put('/employees/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
   const { first_name, last_name, email, phone, department, position, salary, status } = req.body;
+
+  const salaryNum = salary !== undefined && salary !== '' && salary !== null ? Number(salary) : null;
 
   db.run(
     `UPDATE employees SET first_name = ?, last_name = ?, email = ?, phone = ?, 
      department = ?, position = ?, salary = ?, status = ? WHERE id = ?`,
-    [first_name, last_name, email, phone, department, position, salary, status, id],
-    function(err) {
+    [first_name, last_name, email, phone, department, position, salaryNum, status, id],
+    function (err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to update employee' });
       }
@@ -171,10 +215,10 @@ app.put('/api/employees/:id', (req, res) => {
   );
 });
 
-app.delete('/api/employees/:id', (req, res) => {
+api.delete('/employees/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
 
-  db.run('DELETE FROM employees WHERE id = ?', [id], function(err) {
+  db.run('DELETE FROM employees WHERE id = ?', [id], function (err) {
     if (err) {
       return res.status(500).json({ error: 'Failed to delete employee' });
     }
@@ -186,10 +230,11 @@ app.delete('/api/employees/:id', (req, res) => {
 });
 
 // Attendance Management
-app.get('/api/attendance', (req, res) => {
+api.get('/attendance', (req, res) => {
   const { date, employee_id } = req.query;
-  let query = 'SELECT a.*, e.first_name, e.last_name FROM attendance a JOIN employees e ON a.employee_id = e.employee_id';
-  let params = [];
+  let query =
+    'SELECT a.*, e.first_name, e.last_name FROM attendance a JOIN employees e ON a.employee_id = e.employee_id';
+  const params = [];
 
   if (date) {
     query += ' WHERE a.date = ?';
@@ -210,13 +255,17 @@ app.get('/api/attendance', (req, res) => {
   });
 });
 
-app.post('/api/attendance/check-in', (req, res) => {
+api.post('/attendance/check-in', (req, res) => {
   const { employee_id, date, check_in } = req.body;
+
+  if (!employee_id || !date || !check_in) {
+    return res.status(400).json({ error: 'employee_id, date, and check_in are required' });
+  }
 
   db.run(
     'INSERT OR REPLACE INTO attendance (employee_id, date, check_in, status) VALUES (?, ?, ?, ?)',
     [employee_id, date, check_in, 'present'],
-    function(err) {
+    function (err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to check in' });
       }
@@ -225,13 +274,17 @@ app.post('/api/attendance/check-in', (req, res) => {
   );
 });
 
-app.post('/api/attendance/check-out', (req, res) => {
+api.post('/attendance/check-out', (req, res) => {
   const { employee_id, date, check_out } = req.body;
+
+  if (!employee_id || !date || !check_out) {
+    return res.status(400).json({ error: 'employee_id, date, and check_out are required' });
+  }
 
   db.run(
     'UPDATE attendance SET check_out = ? WHERE employee_id = ? AND date = ?',
     [check_out, employee_id, date],
-    function(err) {
+    function (err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to check out' });
       }
@@ -244,18 +297,29 @@ app.post('/api/attendance/check-out', (req, res) => {
 });
 
 // Leave Management
-app.get('/api/leave-requests', (req, res) => {
+api.get('/leave-requests', (req, res) => {
   const { employee_id, status } = req.query;
-  let query = 'SELECT lr.*, e.first_name, e.last_name FROM leave_requests lr JOIN employees e ON lr.employee_id = e.employee_id';
-  let params = [];
+  let query =
+    'SELECT lr.*, e.first_name, e.last_name FROM leave_requests lr JOIN employees e ON lr.employee_id = e.employee_id';
+  const params = [];
+  const where = [];
 
-  if (employee_id) {
-    query += ' WHERE lr.employee_id = ?';
+  if (req.user.role === 'employee') {
+    if (!req.user.employee_id) {
+      return res.json([]);
+    }
+    where.push('lr.employee_id = ?');
+    params.push(req.user.employee_id);
+  } else if (employee_id) {
+    where.push('lr.employee_id = ?');
     params.push(employee_id);
   }
   if (status) {
-    query += employee_id ? ' AND lr.status = ?' : ' WHERE lr.status = ?';
+    where.push('lr.status = ?');
     params.push(status);
+  }
+  if (where.length) {
+    query += ' WHERE ' + where.join(' AND ');
   }
 
   query += ' ORDER BY lr.created_at DESC';
@@ -268,13 +332,17 @@ app.get('/api/leave-requests', (req, res) => {
   });
 });
 
-app.post('/api/leave-requests', (req, res) => {
+api.post('/leave-requests', requireLeaveCreateAccess, (req, res) => {
   const { employee_id, leave_type, start_date, end_date, reason } = req.body;
+
+  if (!employee_id || !leave_type || !start_date || !end_date) {
+    return res.status(400).json({ error: 'employee_id, leave_type, start_date, and end_date are required' });
+  }
 
   db.run(
     'INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, reason) VALUES (?, ?, ?, ?, ?)',
-    [employee_id, leave_type, start_date, end_date, reason],
-    function(err) {
+    [employee_id, leave_type, start_date, end_date, reason || null],
+    function (err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to create leave request' });
       }
@@ -283,14 +351,20 @@ app.post('/api/leave-requests', (req, res) => {
   );
 });
 
-app.put('/api/leave-requests/:id/status', (req, res) => {
+api.put('/leave-requests/:id/status', requireAdmin, (req, res) => {
   const { id } = req.params;
   const { status, approved_by } = req.body;
 
+  if (!status || !['approved', 'rejected', 'pending'].includes(status)) {
+    return res.status(400).json({ error: 'Valid status is required' });
+  }
+
+  const approver = approved_by || req.user.username;
+
   db.run(
     'UPDATE leave_requests SET status = ?, approved_by = ? WHERE id = ?',
-    [status, approved_by, id],
-    function(err) {
+    [status, approver, id],
+    function (err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to update leave request' });
       }
@@ -303,32 +377,39 @@ app.put('/api/leave-requests/:id/status', (req, res) => {
 });
 
 // Dashboard Statistics
-app.get('/api/dashboard/stats', (req, res) => {
+api.get('/dashboard/stats', (req, res) => {
   const queries = [
     'SELECT COUNT(*) as total_employees FROM employees WHERE status = "active"',
     'SELECT COUNT(*) as present_today FROM attendance WHERE date = DATE("now") AND status = "present"',
     'SELECT COUNT(*) as pending_leaves FROM leave_requests WHERE status = "pending"',
-    'SELECT COUNT(*) as total_departments FROM (SELECT DISTINCT department FROM employees WHERE department IS NOT NULL)'
+    'SELECT COUNT(*) as total_departments FROM (SELECT DISTINCT department FROM employees WHERE department IS NOT NULL AND TRIM(department) != "")',
   ];
 
-  Promise.all(queries.map(query => 
-    new Promise((resolve, reject) => {
-      db.get(query, (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
+  Promise.all(
+    queries.map(
+      (query) =>
+        new Promise((resolve, reject) => {
+          db.get(query, (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        })
+    )
+  )
+    .then(([totalEmployees, presentToday, pendingLeaves, totalDepartments]) => {
+      res.json({
+        totalEmployees: totalEmployees.total_employees,
+        presentToday: presentToday.present_today,
+        pendingLeaves: pendingLeaves.pending_leaves,
+        totalDepartments: totalDepartments.total_departments,
       });
     })
-  )).then(([totalEmployees, presentToday, pendingLeaves, totalDepartments]) => {
-    res.json({
-      totalEmployees: totalEmployees.total_employees,
-      presentToday: presentToday.present_today,
-      pendingLeaves: pendingLeaves.pending_leaves,
-      totalDepartments: totalDepartments.total_departments
+    .catch(() => {
+      res.status(500).json({ error: 'Failed to fetch dashboard stats' });
     });
-  }).catch(err => {
-    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
-  });
 });
+
+app.use('/api', api);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

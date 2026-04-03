@@ -15,3 +15,127 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Login page — 3D-style entrance & ambient motion */
+.login-brand-in {
+  animation: login-brand-slide 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-hero-in {
+  animation: login-hero-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.login-form-column-in {
+  animation: login-column-in 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-mobile-brand-in {
+  animation: login-hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-card-entrance {
+  animation: login-card-3d-in 1s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.login-card-interactive {
+  transform: perspective(1000px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg))
+    translateZ(var(--tilt-z, 0px));
+  transform-style: preserve-3d;
+  transition: transform 0.2s ease-out;
+  backface-visibility: hidden;
+}
+
+.login-aurora {
+  animation: login-aurora-drift 14s ease-in-out infinite alternate;
+}
+
+.login-footer-in {
+  animation: login-fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+
+@keyframes login-brand-slide {
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0) rotateY(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotateY(0deg);
+  }
+}
+
+@keyframes login-hero-rise {
+  from {
+    opacity: 0;
+    transform: perspective(900px) rotateX(10deg) translate3d(0, 18px, -30px);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(900px) rotateX(0deg) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes login-column-in {
+  from {
+    opacity: 0;
+    transform: translate3d(32px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes login-card-3d-in {
+  from {
+    opacity: 0;
+    transform: perspective(1100px) rotateX(9deg) translate3d(0, 28px, -48px);
+    box-shadow: 0 0 0 rgba(15, 23, 42, 0);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1100px) rotateX(0deg) translate3d(0, 0, 0);
+    box-shadow:
+      0 25px 50px -12px rgba(15, 23, 42, 0.12),
+      0 0 0 1px rgba(148, 163, 184, 0.12);
+  }
+}
+
+@keyframes login-aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.35;
+  }
+  100% {
+    transform: translate3d(-4%, 3%, 0) scale(1.05);
+    opacity: 0.55;
+  }
+}
+
+@keyframes login-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-brand-in,
+  .login-hero-in,
+  .login-form-column-in,
+  .login-mobile-brand-in,
+  .login-card-entrance,
+  .login-card-interactive,
+  .login-aurora,
+  .login-footer-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

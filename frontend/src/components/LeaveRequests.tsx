@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { FileText, Plus, CheckCircle, XCircle, Calendar, Search } from 'lucide-react';
 
 interface LeaveRequest {
@@ -17,8 +18,10 @@ interface LeaveRequest {
 }
 
 const LeaveRequests: React.FC = () => {
+  const { user, isAdmin } = useAuth();
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -36,11 +39,13 @@ const LeaveRequests: React.FC = () => {
 
   const fetchLeaveRequests = async () => {
     try {
+      setError(null);
       const params = statusFilter !== 'all' ? { status: statusFilter } : {};
-      const response = await axios.get('/api/leave-requests', { params });
+      const response = await api.get<LeaveRequest[]>('/api/leave-requests', { params });
       setLeaveRequests(response.data);
-    } catch (error) {
-      console.error('Error fetching leave requests:', error);
+    } catch (err) {
+      setError('Could not load leave requests.');
+      console.error('Error fetching leave requests:', err);
     } finally {
       setLoading(false);
     }
@@ -48,34 +53,52 @@ const LeaveRequests: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin && !user?.employee_id) {
+      setError('Your account is not linked to an employee record.');
+      return;
+    }
     try {
-      await axios.post('/api/leave-requests', formData);
+      setError(null);
+      const payload = isAdmin
+        ? formData
+        : { ...formData, employee_id: user!.employee_id as string };
+      await api.post('/api/leave-requests', payload);
       fetchLeaveRequests();
       resetForm();
-    } catch (error) {
-      console.error('Error submitting leave request:', error);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setError(msg || 'Could not submit leave request.');
     }
   };
 
   const handleStatusUpdate = async (id: number, status: string) => {
+    if (!isAdmin) return;
     try {
-      await axios.put(`/api/leave-requests/${id}/status`, {
+      setError(null);
+      await api.put(`/api/leave-requests/${id}/status`, {
         status,
-        approved_by: 'admin' // In a real app, this would be the logged-in user
+        approved_by: user?.username,
       });
       fetchLeaveRequests();
-    } catch (error) {
-      console.error('Error updating leave request:', error);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setError(msg || 'Could not update request.');
     }
   };
 
   const resetForm = () => {
     setFormData({
-      employee_id: '',
+      employee_id: isAdmin ? '' : user?.employee_id || '',
       leave_type: 'annual',
       start_date: '',
       end_date: '',
-      reason: ''
+      reason: '',
     });
     setShowAddForm(false);
   };
@@ -110,16 +133,36 @@ const LeaveRequests: React.FC = () => {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Leave Requests</h1>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          New Request
-        </button>
+        {(isAdmin || user?.employee_id) && (
+          <button
+            type="button"
+            onClick={() => {
+              setFormData((prev) => ({
+                ...prev,
+                employee_id: isAdmin ? '' : user?.employee_id || '',
+              }));
+              setShowAddForm(true);
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            New Request
+          </button>
+        )}
       </div>
 
-      {showAddForm && (
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">{error}</div>
+      )}
+
+      {!isAdmin && !user?.employee_id && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+          Your user is not linked to an employee ID. Ask an administrator to link your account before you can submit
+          leave.
+        </div>
+      )}
+
+      {showAddForm && (isAdmin || user?.employee_id) && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Submit Leave Request</h2>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -132,6 +175,7 @@ const LeaveRequests: React.FC = () => {
               required
             />
             <select
+              aria-label="Leave type"
               value={formData.leave_type}
               onChange={(e) => setFormData({...formData, leave_type: e.target.value})}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -198,6 +242,7 @@ const LeaveRequests: React.FC = () => {
               />
             </div>
             <select
+              aria-label="Filter by status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -265,21 +310,28 @@ const LeaveRequests: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    {request.status === 'pending' && (
+                    {request.status === 'pending' && isAdmin && (
                       <div className="flex space-x-2">
                         <button
+                          type="button"
                           onClick={() => handleStatusUpdate(request.id, 'approved')}
                           className="text-green-600 hover:text-green-900"
+                          title="Approve"
                         >
                           <CheckCircle className="w-5 h-5" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleStatusUpdate(request.id, 'rejected')}
                           className="text-red-600 hover:text-red-900"
+                          title="Reject"
                         >
                           <XCircle className="w-5 h-5" />
                         </button>
                       </div>
+                    )}
+                    {request.status === 'pending' && !isAdmin && (
+                      <span className="text-xs text-gray-400">Awaiting admin</span>
                     )}
                   </td>
                 </tr>
